@@ -171,10 +171,4 @@ if __name__ == "__main__":
     print(
         f"🎯 Monitorando descontos a partir de {DESCONTO_MINIMO_PORCENTAGEM}% OFF\n"
     )
-
-    while True:
         executar_monitoramento()
-        print(
-            f"\nPróxima varredura completa em {INTERVALO_SEGUNDOS // 60} minutos..."
-        )
-        time.sleep(INTERVALO_SEGUNDOS)
