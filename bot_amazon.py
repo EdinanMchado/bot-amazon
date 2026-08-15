@@ -53,9 +53,8 @@ def enviar_alerta_telegram(mensagem, link_foto=None):
         }
 
     try:
-        response = requests.post(
-            url, data=payload, impersonate=random.choice(NAVEGADORES)
-        )
+        # Usa requests padrão sem impersonate para o Telegram não misturar rotas
+        response = requests.post(url, data=payload, timeout=10)
         if response.status_code != 200:
             print(f"❌ Erro ao enviar mensagem no Telegram: {response.text}")
         else:
@@ -153,7 +152,8 @@ def buscar_ofertas_amazon(termo):
                                 enviar_alerta_telegram(
                                     mensagem, link_foto=link_foto
                                 )
-                                time.sleep(2)
+                                # Pausa de 5 segundos entre cada envio no Telegram para aliviar o tráfego
+                                time.sleep(5)
 
                 # Busca concluída com sucesso, encerra as tentativas do termo
                 break
@@ -175,10 +175,14 @@ def buscar_ofertas_amazon(termo):
 
 
 def executar_monitoramento():
-    for termo in TERMOS_BUSCA:
+    # Embaralha a lista a cada execução para não consultar sempre na mesma ordem
+    termos_embaralhados = TERMOS_BUSCA.copy()
+    random.shuffle(termos_embaralhados)
+
+    for termo in termos_embaralhados:
         buscar_ofertas_amazon(termo)
-        # Pausa aleatória entre 10 e 20 segundos entre cada termo para evitar bloqueios
-        tempo_espera = random.randint(10, 20)
+        # Pausa aleatória entre 12 e 25 segundos entre cada termo para evitar bloqueios
+        tempo_espera = random.randint(12, 25)
         time.sleep(tempo_espera)
 
 
