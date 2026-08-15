@@ -26,6 +26,9 @@ TERMOS_BUSCA = [
     "notebook",
     "smartwatch",
     "fone bluetooth",
+    "playstation 5",
+    "Eau de Parfum",
+    "Air Fryers",
 ]
 
 # Headers para simular um navegador real e evitar bloqueios
@@ -82,10 +85,10 @@ def extrair_preco(texto):
     """Converte texto de preço no formato brasileiro para float."""
     if not texto:
         return None
-    # Remove R$, espaços e converte pontos de milhar e vírgula decimal
-    texto me = re.sub(r"[^\d,]", "", texto)
-    if texto me:
-        return float(texto me.replace(",", "."))
+   # Remove R$, espaços e converte pontos de milhar e vírgula decimal
+    texto_limpo = re.sub(r"[^\d,]", "", texto)
+    if texto_limpo:
+        return float(texto_limpo.replace(",", "."))
     return None
 
 
