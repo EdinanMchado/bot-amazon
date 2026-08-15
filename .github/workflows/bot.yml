@@ -2,7 +2,7 @@ name: Bot Amazon
 
 on:
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: '0 * * * *' # Roda 1 vez por hora (evita o bloqueio temporário de IP)
   workflow_dispatch:
 
 jobs:
