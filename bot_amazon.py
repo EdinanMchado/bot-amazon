@@ -2,27 +2,18 @@ import os
 import re
 import time
 from urllib.parse import quote_plus
-import requests
+from curl_cffi import requests
 from bs4 import BeautifulSoup
-from fake_useragent import UserAgent
-
-ua = UserAgent()
 
 # ==============================================================================
 # CONFIGURAÇÕES PRINCIPAIS
 # ==============================================================================
 
-# Insira aqui o Token do seu Bot do Telegram e o Chat ID
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "SEU_TELEGRAM_TOKEN_AQUI")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "SEU_TELEGRAM_CHAT_ID_AQUI")
-
-# Tag de Afiliado da Amazon (opcional, se não tiver deixe em branco "")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 TAG_AFILIADO = "SEU_TAG_AFILIADO_AQUI"
-
-# Porcentagem mínima de desconto para disparar o alerta
 DESCONTO_MINIMO_PORCENTAGEM = 20.0
 
-# Termos que você quer monitorar automaticamente
 TERMOS_BUSCA = [
     "smartphone",
     "air fryer",
@@ -35,15 +26,14 @@ TERMOS_BUSCA = [
 ]
 
 # ==============================================================================
-# FUNÇÃO DE ENVIO PARA O TELEGRAM (COM FOTO)
+# FUNÇÃO DE ENVIO PARA O TELEGRAM
 # ==============================================================================
 
-
 def enviar_alerta_telegram(mensagem, link_foto=None):
-    """Envia a mensagem para o Telegram.
+    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+        print("⚠️ Telegram não configurado em Secrets.")
+        return
 
-    Se houver link de foto, envia como imagem com legenda.
-    """
     if link_foto:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
         payload = {
@@ -61,7 +51,7 @@ def enviar_alerta_telegram(mensagem, link_foto=None):
         }
 
     try:
-        response = requests.post(url, data=payload)
+        response = requests.post(url, data=payload, impersonate="chrome120")
         if response.status_code != 200:
             print(f"❌ Erro ao enviar mensagem no Telegram: {response.text}")
         else:
@@ -69,17 +59,13 @@ def enviar_alerta_telegram(mensagem, link_foto=None):
     except Exception as e:
         print(f"❌ Falha na conexão com o Telegram: {e}")
 
-
 # ==============================================================================
 # FUNÇÕES DE BUSCA E SCRAPING DA AMAZON
 # ==============================================================================
 
-
 def extrair_preco(texto):
-    """Converte texto de preço no formato brasileiro para float."""
     if not texto:
         return None
-    # Remove R$, espaços e converte pontos de milhar e vírgula decimal
     texto_limpo = re.sub(r"[^\d,]", "", texto)
     if texto_limpo:
         return float(texto_limpo.replace(",", "."))
@@ -90,19 +76,17 @@ def buscar_ofertas_amazon(termo):
     print(f"\n🔍 Pesquisando por: '{termo}' na Amazon...")
     url_busca = f"https://www.amazon.com.br/s?k={quote_plus(termo)}"
 
-    # Inicia uma sessão para manter cookies e parecer um navegador real
-    session = requests.Session()
-    session.headers.update({
-        "User-Agent": ua.random,
-        "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
-    })
-
     try:
-        response = session.get(url_busca, timeout=10)
+        # Usa o Personas Impersonate para imitar a pegada de rede do Chrome 120
+        response = requests.get(
+            url_busca,
+            impersonate="chrome120",
+            timeout=15
+        )
+
         if response.status_code != 200:
             print(
-                f"⚠️ Não foi possível acessar a busca (Status: "
-                f"{response.status_code})"
+                f"⚠️ Não foi possível acessar a busca (Status: {response.status_code})"
             )
             return
 
@@ -117,7 +101,6 @@ def buscar_ofertas_amazon(termo):
                 continue
             titulo = tag_titulo.get_text(strip=True)
 
-            # 2. Link do Produto
             link_tag = item.find("a", class_="a-link-normal s-no-outline")
             if not link_tag or "href" not in link_tag.attrs:
                 continue
@@ -125,11 +108,9 @@ def buscar_ofertas_amazon(termo):
             if TAG_AFILIADO:
                 link_produto += f"&tag={TAG_AFILIADO}"
 
-            # 3. Imagem do Produto (Captura Automática)
             tag_imagem = item.find("img", class_="s-image")
             link_foto = tag_imagem["src"] if tag_imagem else None
 
-            # 4. Preço Atual e Preço Antigo
             preco_atual_tag = item.find("span", class_="a-price-whole")
             preco_antigo_tag = item.find("span", class_="a-text-price")
 
@@ -146,14 +127,12 @@ def buscar_ofertas_amazon(termo):
                         (preco_antigo - preco_atual) / preco_antigo
                     ) * 100
 
-                    # Verifica se o desconto atinge o mínimo configurado
                     if desconto >= DESCONTO_MINIMO_PORCENTAGEM:
                         mensagem = (
                             f"🚨 *OFERTA ENCONTRADA!*\n\n"
                             f"📦 *Produto:* {titulo}\n"
                             f"💰 *De:* ~R$ {preco_antigo:.2f}~\n"
-                            f"🔥 *Por:* R$ {preco_atual:.2f} ({desconto:.0f}%"
-                            f" OFF)\n\n"
+                            f"🔥 *Por:* R$ {preco_atual:.2f} ({desconto:.0f}% OFF)\n\n"
                             f"🔗 [Clique aqui para comprar]({link_produto})"
                         )
 
@@ -163,7 +142,7 @@ def buscar_ofertas_amazon(termo):
                         enviar_alerta_telegram(
                             mensagem, link_foto=link_foto
                         )
-                        time.sleep(1)  # Pausa de segurança entre alertas
+                        time.sleep(1)
 
     except Exception as e:
         print(f"❌ Erro durante a busca de '{termo}': {e}")
@@ -172,7 +151,7 @@ def buscar_ofertas_amazon(termo):
 def executar_monitoramento():
     for termo in TERMOS_BUSCA:
         buscar_ofertas_amazon(termo)
-        time.sleep(7)  # Pausa entre pesquisas
+        time.sleep(5)
 
 
 if __name__ == "__main__":
