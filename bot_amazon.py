@@ -171,4 +171,4 @@ if __name__ == "__main__":
     print(
         f"🎯 Monitorando descontos a partir de {DESCONTO_MINIMO_PORCENTAGEM}% OFF\n"
     )
-        executar_monitoramento()
+    executar_monitoramento()
