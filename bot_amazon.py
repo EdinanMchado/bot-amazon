@@ -7,6 +7,7 @@ from bs4 import BeautifulSoup
 from fake_useragent import UserAgent
 
 ua = UserAgent()
+
 # ==============================================================================
 # CONFIGURAÇÕES PRINCIPAIS
 # ==============================================================================
@@ -32,15 +33,6 @@ TERMOS_BUSCA = [
     "Eau de Parfum",
     "Air Fryers",
 ]
-
-# Headers para simular um navegador real e evitar bloqueios
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        " (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
-    ),
-    "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
-}
 
 # ==============================================================================
 # FUNÇÃO DE ENVIO PARA O TELEGRAM (COM FOTO)
@@ -87,7 +79,7 @@ def extrair_preco(texto):
     """Converte texto de preço no formato brasileiro para float."""
     if not texto:
         return None
-   # Remove R$, espaços e converte pontos de milhar e vírgula decimal
+    # Remove R$, espaços e converte pontos de milhar e vírgula decimal
     texto_limpo = re.sub(r"[^\d,]", "", texto)
     if texto_limpo:
         return float(texto_limpo.replace(",", "."))
@@ -97,7 +89,8 @@ def extrair_preco(texto):
 def buscar_ofertas_amazon(termo):
     print(f"\n🔍 Pesquisando por: '{termo}' na Amazon...")
     url_busca = f"https://www.amazon.com.br/s?k={quote_plus(termo)}"
-headers = {
+
+    headers = {
         "User-Agent": ua.random,
         "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
     }
@@ -106,8 +99,8 @@ headers = {
         response = requests.get(url_busca, headers=headers, timeout=10)
         if response.status_code != 200:
             print(
-                f"⚠️ Não foi possível acessar a busca (Status:"
-                f" {response.status_code})"
+                f"⚠️ Não foi possível acessar a busca (Status: "
+                f"{response.status_code})"
             )
             return
 
@@ -117,7 +110,6 @@ headers = {
         )
 
         for item in produtos:
-            # 1. Título do Produto
             tag_titulo = item.find("h2")
             if not tag_titulo:
                 continue
@@ -178,8 +170,9 @@ headers = {
 def executar_monitoramento():
     for termo in TERMOS_BUSCA:
         buscar_ofertas_amazon(termo)
-        time.sleep(7)  # Aumente de 3 para 7 segundos
-        
+        time.sleep(7)  # Pausa entre pesquisas
+
+
 if __name__ == "__main__":
     print("🤖 Bot de Ofertas por Busca Automática Iniciado!")
     print(
