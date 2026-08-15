@@ -15,7 +15,7 @@ TELEGRAM_CHAT_ID = "8492736362"
 # BUSCAS E PORCENTAGEM DE DESCONTO
 # ==========================================
 # Definir a % de desconto mínima para enviar o alerta (ex: 20 = 20% de desconto)
-DESCONTO_MINIMO_PORCENTAGEM = 50.0
+DESCONTO_MINIMO_PORCENTAGEM = 20.0
 
 # Termos que você quer buscar na Amazon
 TERMOS_BUSCA = [
