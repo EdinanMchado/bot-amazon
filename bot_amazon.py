@@ -160,10 +160,10 @@ def buscar_ofertas_amazon(termo):
 
             elif response.status_code == 503 and tentativa == 1:
                 print(
-                    "⚠️ Status 503 detectado. Aguardando 5 segundos para tentar"
+                    "⚠️ Status 503 detectado. Aguardando 12 segundos para tentar"
                     " novamente..."
                 )
-                time.sleep(5)
+                time.sleep(12)
             else:
                 print(
                     f"⚠️ Não foi possível acessar a busca (Status:"
