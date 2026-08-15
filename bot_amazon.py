@@ -1,169 +1,175 @@
+import os
 import re
 import time
-from datetime import datetime
-import urllib.parse
+from urllib.parse import quote_plus
 import requests
 from bs4 import BeautifulSoup
 
-# ==========================================
-# CONFIGURAÇÕES DO TELEGRAM
-# ==========================================
-TELEGRAM_TOKEN = "8417768846:AAGOJQ1uINzL1ViHgRW4N12YEnR6w2z14f8"
-TELEGRAM_CHAT_ID = "8492736362"
+# ==============================================================================
+# CONFIGURAÇÕES PRINCIPAIS
+# ==============================================================================
 
-# ==========================================
-# BUSCAS E PORCENTAGEM DE DESCONTO
-# ==========================================
-# Definir a % de desconto mínima para enviar o alerta (ex: 20 = 20% de desconto)
-DESCONTO_MINIMO_PORCENTAGEM = 21.0
+# Insira aqui o Token do seu Bot do Telegram e o Chat ID
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "SEU_TELEGRAM_TOKEN_AQUI")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "SEU_TELEGRAM_CHAT_ID_AQUI")
 
-# Termos que você quer buscar na Amazon
+# Tag de Afiliado da Amazon (opcional, se não tiver deixe em branco "")
+TAG_AFILIADO = "SEU_TAG_AFILIADO_AQUI"
+
+# Porcentagem mínima de desconto para disparar o alerta
+DESCONTO_MINIMO_PORCENTAGEM = 20.0
+
+# Termos que você quer monitorar automaticamente
 TERMOS_BUSCA = [
-    "Smartphone",
-    "Memória RAM",
+    "smartphone",
+    "air fryer",
+    "notebook",
+    "smartwatch",
     "fone bluetooth",
-    "SSD interno",
 ]
 
-INTERVALO_SEGUNDOS = 900  # Checa a cada 15 minutos (900 segundos)
-
+# Headers para simular um navegador real e evitar bloqueios
 HEADERS = {
     "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/122.0.0.0 Safari/537.36"
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        " (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
     ),
     "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
 }
 
+# ==============================================================================
+# FUNÇÃO DE ENVIO PARA O TELEGRAM (COM FOTO)
+# ==============================================================================
 
-def enviar_telegram(mensagem):
-    """Envia mensagem de alerta via API do Telegram"""
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": TELEGRAM_CHAT_ID,
-        "text": mensagem,
-        "parse_mode": "HTML",
-    }
+
+def enviar_alerta_telegram(mensagem, link_foto=None):
+    """Envia a mensagem para o Telegram.
+
+    Se houver link de foto, envia como imagem com legenda.
+    """
+    if link_foto:
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
+        payload = {
+            "chat_id": TELEGRAM_CHAT_ID,
+            "photo": link_foto,
+            "caption": mensagem,
+            "parse_mode": "Markdown",
+        }
+    else:
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        payload = {
+            "chat_id": TELEGRAM_CHAT_ID,
+            "text": mensagem,
+            "parse_mode": "Markdown",
+        }
+
     try:
-        response = requests.post(url, data=payload, timeout=10)
-        return response.status_code == 200
+        response = requests.post(url, data=payload)
+        if response.status_code != 200:
+            print(f"❌ Erro ao enviar mensagem no Telegram: {response.text}")
+        else:
+            print("🚀 Alerta enviado com sucesso para o Telegram!")
     except Exception as e:
-        print(f"Erro ao enviar para o Telegram: {e}")
-        return False
+        print(f"❌ Falha na conexão com o Telegram: {e}")
 
 
-def extrair_valor(texto):
-    """Auxiliar para converter texto de preço para float"""
+# ==============================================================================
+# FUNÇÕES DE BUSCA E SCRAPING DA AMAZON
+# ==============================================================================
+
+
+def extrair_preco(texto):
+    """Converte texto de preço no formato brasileiro para float."""
     if not texto:
         return None
-    numeros = re.findall(r"\d+[\.,]?\d*", texto)
-    if numeros:
-        valor_str = numeros[0].replace(".", "").replace(",", ".")
-        try:
-            return float(valor_str)
-        except ValueError:
-            return None
+    # Remove R$, espaços e converte pontos de milhar e vírgula decimal
+    texto me = re.sub(r"[^\d,]", "", texto)
+    if texto me:
+        return float(texto me.replace(",", "."))
     return None
 
 
-def buscar_produtos_por_termo(termo):
-    """Faz a busca da palavra-chave na Amazon e analisa os produtos encontrados"""
-    termo_encoded = urllib.parse.quote(termo)
-    url_busca = f"https://www.amazon.com.br/s?k={termo_encoded}"
-
-    print(f"\n🔍 Pesquisando por: '{termo}'...")
+def buscar_ofertas_amazon(termo):
+    print(f"\n🔍 Pesquisando por: '{termo}' na Amazon...")
+    url_busca = f"https://www.amazon.com.br/s?k={quote_plus(termo)}"
 
     try:
-        response = requests.get(url_busca, headers=HEADERS, timeout=15)
+        response = requests.get(url_busca, headers=HEADERS, timeout=10)
         if response.status_code != 200:
-            print("   ❌ Não foi possível carregar a página de busca.")
+            print(
+                f"⚠️ Não foi possível acessar a busca (Status:"
+                f" {response.status_code})"
+            )
             return
 
         soup = BeautifulSoup(response.content, "html.parser")
-        # Encontra os blocos de produtos na busca
-        itens = soup.select('div[data-component-type="s-search-result"]')
+        produtos = soup.find_all(
+            "div", {"data-component-type": "s-search-result"}
+        )
 
-        print(f"   📦 {len(itens)} produtos encontrados na lista.")
-
-        for item in itens:
-            # 1. Pega o título do produto
-            titulo_elem = item.select_one(
-                "h2 a span, span.a-size-medium, span.a-size-base-plus"
-            )
-            if not titulo_elem:
+        for item in produtos:
+            # 1. Título do Produto
+            tag_titulo = item.find("h2")
+            if not tag_titulo:
                 continue
-            nome = titulo_elem.get_text().strip()
+            titulo = tag_titulo.get_text(strip=True)
 
-            # 2. Pega o Link
-            link_elem = item.select_one("h2 a")
-            if not link_elem or "href" not in link_elem.attrs:
+            # 2. Link do Produto
+            link_tag = item.find("a", class_="a-link-normal s-no-outline")
+            if not link_tag or "href" not in link_tag.attrs:
                 continue
-            link_produto = "https://www.amazon.com.br" + link_elem["href"]
+            link_produto = "https://www.amazon.com.br" + link_tag["href"]
+            if TAG_AFILIADO:
+                link_produto += f"&tag={TAG_AFILIADO}"
 
-            # 3. Pega o Preço Atual (Preço Por)
-            preco_atual_elem = item.select_one("span.a-price span.a-offscreen")
-            preco_atual = (
-                extrair_valor(preco_atual_elem.get_text())
-                if preco_atual_elem
-                else None
-            )
+            # 3. Imagem do Produto (Captura Automática)
+            tag_imagem = item.find("img", class_="s-image")
+            link_foto = tag_imagem["src"] if tag_imagem else None
 
-            # 4. Pega o Preço Original (Preço De / Riscado)
-            preco_original_elem = item.select_one(
-                "span.a-price.a-text-price span.a-offscreen"
-            )
-            preco_original = (
-                extrair_valor(preco_original_elem.get_text())
-                if preco_original_elem
-                else None
-            )
+            # 4. Preço Atual e Preço Antigo
+            preco_atual_tag = item.find("span", class_="a-price-whole")
+            preco_antigo_tag = item.find("span", class_="a-text-price")
 
-            # Só calcula o desconto se encontrou ambos os preços e o preço original for maior
-            if (
-                preco_atual
-                and preco_original
-                and preco_original > preco_atual
-            ):
-                desconto_reais = preco_original - preco_atual
-                porcentagem_desconto = (desconto_reais / preco_original) * 100
-
-                print(
-                    f"   • {nome[:30]}... | De: R$ {preco_original:.2f} Por: R$ {preco_atual:.2f} ({porcentagem_desconto:.1f}% OFF)"
+            if preco_atual_tag and preco_antigo_tag:
+                preco_atual = extrair_preco(preco_atual_tag.get_text())
+                preco_antigo = extrair_preco(
+                    preco_antigo_tag.find(
+                        "span", class_="a-offscreen"
+                    ).get_text()
                 )
 
-                # Se a % de desconto for maior ou igual ao mínimo configurado, envia o alerta!
-                if porcentagem_desconto >= DESCONTO_MINIMO_PORCENTAGEM:
-                    msg = (
-                        f"🔥 <b>OFERTA / DESCONTO IMPERDÍVEL!</b>\n\n"
-                        f"📦 <b>Produto:</b> {nome}\n"
-                        f"🏷️ <b>Desconto:</b> {porcentagem_desconto:.1f}% OFF\n"
-                        f"❌ <b>De:</b> <s>R$ {preco_original:.2f}</s>\n"
-                        f"✅ <b>Por:</b> R$ {preco_atual:.2f}\n"
-                        f"💰 <b>Economia:</b> R$ {desconto_reais:.2f}\n\n"
-                        f"🔗 <a href='{link_produto}'>Clique aqui para aproveitar na Amazon</a>"
-                    )
-                    if enviar_telegram(msg):
-                        print("     ✅ Alerta de desconto enviado!")
-                    else:
-                        print("     ❌ Falha ao enviar alerta.")
+                if preco_atual and preco_antigo and preco_antigo > preco_atual:
+                    desconto = (
+                        (preco_antigo - preco_atual) / preco_antigo
+                    ) * 100
 
-            time.sleep(1)  # Pausa leve entre itens
+                    # Verifica se o desconto atinge o mínimo configurado
+                    if desconto >= DESCONTO_MINIMO_PORCENTAGEM:
+                        mensagem = (
+                            f"🚨 *OFERTA ENCONTRADA!*\n\n"
+                            f"📦 *Produto:* {titulo}\n"
+                            f"💰 *De:* ~R$ {preco_antigo:.2f}~\n"
+                            f"🔥 *Por:* R$ {preco_atual:.2f} ({desconto:.0f}%"
+                            f" OFF)\n\n"
+                            f"🔗 [Clique aqui para comprar]({link_produto})"
+                        )
+
+                        print(
+                            f"✅ Desconto de {desconto:.1f}% achado: {titulo[:30]}..."
+                        )
+                        enviar_alerta_telegram(
+                            mensagem, link_foto=link_foto
+                        )
+                        time.sleep(1)  # Pausa de segurança entre alertas
 
     except Exception as e:
-        print(f"Erro ao realizar a busca por '{termo}': {e}")
+        print(f"❌ Erro durante a busca de '{termo}': {e}")
 
 
 def executar_monitoramento():
-    """Roda o ciclo de busca em todas as palavras-chave"""
-    horario_atual = datetime.now().strftime("%H:%M:%S")
-    print(f"\n==========================================")
-    print(f"🚀 Varredura por Descontos Iniciada em {horario_atual}")
-    print(f"==========================================")
-
     for termo in TERMOS_BUSCA:
-        buscar_produtos_por_termo(termo)
-        time.sleep(3)  # Pausa entre buscas para evitar bloqueios
+        buscar_ofertas_amazon(termo)
+        time.sleep(3)  # Pausa entre termos de busca para evitar bloqueios
 
 
 if __name__ == "__main__":
