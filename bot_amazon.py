@@ -23,8 +23,15 @@ TERMOS_BUSCA = [
     "playstation 5",
 ]
 
-# Lista de versões de navegadores para alternar
+# Impersonations suportadas pelo curl_cffi
 NAVEGADORES = ["chrome110", "chrome119", "chrome120", "edge101"]
+
+# Headers realistas de navegador humano
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0",
+]
 
 # ==============================================================================
 # FUNÇÃO DE ENVIO PARA O TELEGRAM
@@ -53,7 +60,6 @@ def enviar_alerta_telegram(mensagem, link_foto=None):
         }
 
     try:
-        # Usa requests padrão sem impersonate para o Telegram não misturar rotas
         response = requests.post(url, data=payload, timeout=10)
         if response.status_code != 200:
             print(f"❌ Erro ao enviar mensagem no Telegram: {response.text}")
@@ -81,11 +87,25 @@ def buscar_ofertas_amazon(termo):
     print(f"\n🔍 Pesquisando por: '{termo}' na Amazon...")
     url_busca = f"https://www.amazon.com.br/s?k={quote_plus(termo)}"
 
-    # Tenta até 2 vezes se receber um status 503
     for tentativa in range(1, 3):
         try:
             browser = random.choice(NAVEGADORES)
-            response = requests.get(url_busca, impersonate=browser, timeout=15)
+            headers = {
+                "User-Agent": random.choice(USER_AGENTS),
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+                "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+                "Accept-Encoding": "gzip, deflate, br",
+                "Referer": "https://www.amazon.com.br/",
+                "DNT": "1",
+                "Upgrade-Insecure-Requests": "1",
+            }
+
+            response = requests.get(
+                url_busca,
+                impersonate=browser,
+                headers=headers,
+                timeout=20,
+            )
 
             if response.status_code == 200:
                 soup = BeautifulSoup(response.content, "html.parser")
@@ -93,6 +113,7 @@ def buscar_ofertas_amazon(termo):
                     "div", {"data-component-type": "s-search-result"}
                 )
 
+                ofertas_encontradas = 0
                 for item in produtos:
                     tag_titulo = item.find("h2")
                     if not tag_titulo:
@@ -152,18 +173,20 @@ def buscar_ofertas_amazon(termo):
                                 enviar_alerta_telegram(
                                     mensagem, link_foto=link_foto
                                 )
-                                # Pausa de 5 segundos entre cada envio no Telegram para aliviar o tráfego
-                                time.sleep(5)
+                                ofertas_encontradas += 1
+                                time.sleep(4)
 
-                # Busca concluída com sucesso, encerra as tentativas do termo
+                if ofertas_encontradas == 0:
+                    print("ℹ️ Nenhuma oferta acima de 50% OFF nesta busca.")
+
                 break
 
             elif response.status_code == 503 and tentativa == 1:
                 print(
-                    "⚠️ Status 503 detectado. Aguardando 12 segundos para tentar"
+                    "⚠️ Status 503 detectado. Aguardando 15 segundos para tentar"
                     " novamente..."
                 )
-                time.sleep(12)
+                time.sleep(15)
             else:
                 print(
                     f"⚠️ Não foi possível acessar a busca (Status:"
@@ -175,14 +198,12 @@ def buscar_ofertas_amazon(termo):
 
 
 def executar_monitoramento():
-    # Embaralha a lista a cada execução para não consultar sempre na mesma ordem
     termos_embaralhados = TERMOS_BUSCA.copy()
     random.shuffle(termos_embaralhados)
 
     for termo in termos_embaralhados:
         buscar_ofertas_amazon(termo)
-        # Pausa aleatória entre 12 e 25 segundos entre cada termo para evitar bloqueios
-        tempo_espera = random.randint(12, 25)
+        tempo_espera = random.randint(15, 30)
         time.sleep(tempo_espera)
 
 
