@@ -172,7 +172,7 @@ def buscar_ofertas_amazon(termo):
 def executar_monitoramento():
     for termo in TERMOS_BUSCA:
         buscar_ofertas_amazon(termo)
-        time.sleep(3)  # Pausa entre termos de busca para evitar bloqueios
+        time.sleep(7)  # Aumente de 3 para 7 segundos
 
 
 if __name__ == "__main__":
