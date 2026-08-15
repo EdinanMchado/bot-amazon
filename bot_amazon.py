@@ -90,13 +90,15 @@ def buscar_ofertas_amazon(termo):
     print(f"\n🔍 Pesquisando por: '{termo}' na Amazon...")
     url_busca = f"https://www.amazon.com.br/s?k={quote_plus(termo)}"
 
-    headers = {
+    # Inicia uma sessão para manter cookies e parecer um navegador real
+    session = requests.Session()
+    session.headers.update({
         "User-Agent": ua.random,
         "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
-    }
+    })
 
     try:
-        response = requests.get(url_busca, headers=headers, timeout=10)
+        response = session.get(url_busca, timeout=10)
         if response.status_code != 200:
             print(
                 f"⚠️ Não foi possível acessar a busca (Status: "
