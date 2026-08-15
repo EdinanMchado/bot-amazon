@@ -1,9 +1,10 @@
 import os
+import random
 import re
 import time
 from urllib.parse import quote_plus
-from curl_cffi import requests
 from bs4 import BeautifulSoup
+from curl_cffi import requests
 
 # ==============================================================================
 # CONFIGURAÇÕES PRINCIPAIS
@@ -12,7 +13,7 @@ from bs4 import BeautifulSoup
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 TAG_AFILIADO = "SEU_TAG_AFILIADO_AQUI"
-DESCONTO_MINIMO_PORCENTAGEM = 20.0
+DESCONTO_MINIMO_PORCENTAGEM = 50.0
 
 TERMOS_BUSCA = [
     "smartphone",
@@ -22,12 +23,15 @@ TERMOS_BUSCA = [
     "fone bluetooth",
     "playstation 5",
     "Eau de Parfum",
-    "Air Fryers",
 ]
+
+# Lista de versões de navegadores para alternar
+NAVEGADORES = ["chrome110", "chrome119", "chrome120", "edge101"]
 
 # ==============================================================================
 # FUNÇÃO DE ENVIO PARA O TELEGRAM
 # ==============================================================================
+
 
 def enviar_alerta_telegram(mensagem, link_foto=None):
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
@@ -51,7 +55,9 @@ def enviar_alerta_telegram(mensagem, link_foto=None):
         }
 
     try:
-        response = requests.post(url, data=payload, impersonate="chrome120")
+        response = requests.post(
+            url, data=payload, impersonate=random.choice(NAVEGADORES)
+        )
         if response.status_code != 200:
             print(f"❌ Erro ao enviar mensagem no Telegram: {response.text}")
         else:
@@ -59,9 +65,11 @@ def enviar_alerta_telegram(mensagem, link_foto=None):
     except Exception as e:
         print(f"❌ Falha na conexão com o Telegram: {e}")
 
+
 # ==============================================================================
 # FUNÇÕES DE BUSCA E SCRAPING DA AMAZON
 # ==============================================================================
+
 
 def extrair_preco(texto):
     if not texto:
@@ -77,16 +85,14 @@ def buscar_ofertas_amazon(termo):
     url_busca = f"https://www.amazon.com.br/s?k={quote_plus(termo)}"
 
     try:
-        # Usa o Personas Impersonate para imitar a pegada de rede do Chrome 120
-        response = requests.get(
-            url_busca,
-            impersonate="chrome120",
-            timeout=15
-        )
+        # Escolhe aleatoriamente um perfil de navegador a cada requisição
+        browser = random.choice(NAVEGADORES)
+        response = requests.get(url_busca, impersonate=browser, timeout=15)
 
         if response.status_code != 200:
             print(
-                f"⚠️ Não foi possível acessar a busca (Status: {response.status_code})"
+                f"⚠️ Não foi possível acessar a busca (Status:"
+                f" {response.status_code})"
             )
             return
 
@@ -132,17 +138,17 @@ def buscar_ofertas_amazon(termo):
                             f"🚨 *OFERTA ENCONTRADA!*\n\n"
                             f"📦 *Produto:* {titulo}\n"
                             f"💰 *De:* ~R$ {preco_antigo:.2f}~\n"
-                            f"🔥 *Por:* R$ {preco_atual:.2f} ({desconto:.0f}% OFF)\n\n"
+                            f"🔥 *Por:* R$ {preco_atual:.2f} ({desconto:.0f}%"
+                            f" OFF)\n\n"
                             f"🔗 [Clique aqui para comprar]({link_produto})"
                         )
 
                         print(
-                            f"✅ Desconto de {desconto:.1f}% achado: {titulo[:30]}..."
+                            f"✅ Desconto de {desconto:.1f}% achado:"
+                            f" {titulo[:30]}..."
                         )
-                        enviar_alerta_telegram(
-                            mensagem, link_foto=link_foto
-                        )
-                        time.sleep(1)
+                        enviar_alerta_telegram(mensagem, link_foto=link_foto)
+                        time.sleep(2)
 
     except Exception as e:
         print(f"❌ Erro durante a busca de '{termo}': {e}")
@@ -151,12 +157,15 @@ def buscar_ofertas_amazon(termo):
 def executar_monitoramento():
     for termo in TERMOS_BUSCA:
         buscar_ofertas_amazon(termo)
-        time.sleep(5)
+        # Pausa aleatória entre 8 e 15 segundos entre cada termo para evitar padrão humano fixo
+        tempo_espera = random.randint(8, 15)
+        time.sleep(tempo_espera)
 
 
 if __name__ == "__main__":
     print("🤖 Bot de Ofertas por Busca Automática Iniciado!")
     print(
-        f"🎯 Monitorando descontos a partir de {DESCONTO_MINIMO_PORCENTAGEM}% OFF\n"
+        f"🎯 Monitorando descontos a partir de {DESCONTO_MINIMO_PORCENTAGEM}%"
+        " OFF\n"
     )
     executar_monitoramento()
