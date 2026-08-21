@@ -21,6 +21,8 @@ TERMOS_BUSCA = [
     "notebook",
     "fone bluetooth",
     "playstation 5",
+    "shampoo",
+    "sabonete",
 ]
 
 # Impersonations suportadas pelo curl_cffi
