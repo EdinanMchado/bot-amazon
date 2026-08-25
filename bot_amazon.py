@@ -7,43 +7,49 @@ from bs4 import BeautifulSoup
 from curl_cffi import requests
 
 # ==============================================================================
-# CONFIGURAÇÕES PRINCIPAIS E REGRAS ANTI-FAKE
+# CONFIGURAÇÕES DO MODO BUG DE PREÇO (INCLUINDO PC HARDWARE)
 # ==============================================================================
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 TAG_AFILIADO = "SEU_TAG_AFILIADO_AQUI"
 
-# 🛒 Termos que o robô vai buscar na Amazon
+# ⚡ CRITÉRIOS DE BUG
+DESCONTO_MINIMO_BUG = 70.0  # Mínimo 70% OFF para apitar
+PRECO_MINIMO_PRODUTO = 40.0  # Garante que é um produto/hardware de valor real
+
+# 🛒 Termos de Busca (Geral + Hardware/Periféricos de Alta Demanda)
 TERMOS_BUSCA = [
+    # Eletrônicos & Consoles
     "smartphone",
     "air fryer",
-    "notebook",
+    "notebook gamer",
     "fone bluetooth",
     "playstation 5",
-    "sabonete",
-    "shampoo",
+    "tv 4k",
+    "monitor gamer",
+    # Hardware & Periféricos de PC
+    "memoria ram ddr5",
+    "ssd nvme",
+    "placa de video",
+    "processador intel ryzen",
+    "teclado mecanico",
+    "mouse gamer",
+    "water cooler",
 ]
 
-# 🧴 Categorias com tratamento especial anti-fake
-TERMOS_HIGIENE = ["sabonete", "shampoo", "condicionador", "desodorante", "sabonetes"]
-
-# 🛑 Palavras-chave de acessórios a serem ignorados nas buscas de eletrônicos
-TERMOS_IGNORADOS_ELETRONICOS = [
-    "capa",
+# 🛑 Apenas bugigangas reais e capas de celular/tablet (para não filtrar peças de PC)
+TERMOS_IGNORADOS = [
+    "capa para celular",
     "capinha",
-    "case",
     "pelicula",
     "película",
-    "suporte",
-    "cabo",
-    "carregador",
-    "adaptador",
+    "capa de tablet",
+    "capa kindle",
     "cordão",
-    "proteção",
+    "adesivo",
 ]
 
-# Impersonations e User-Agents para evitar Status 503
 NAVEGADORES = ["chrome110", "chrome119", "chrome120", "edge101"]
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
@@ -80,7 +86,7 @@ def enviar_alerta_telegram(mensagem, link_foto=None):
     try:
         response = requests.post(url, data=payload, timeout=10)
         if response.status_code == 200:
-            print("🚀 Alerta enviado com sucesso para o Telegram!")
+            print("🚀 ALERTA DE BUG ENVIADO PARA O TELEGRAM!")
         else:
             print(f"❌ Erro ao enviar mensagem no Telegram: {response.text}")
     except Exception as e:
@@ -88,7 +94,7 @@ def enviar_alerta_telegram(mensagem, link_foto=None):
 
 
 # ==============================================================================
-# FUNÇÕES DE PROCESSAMENTO E SCRAPING DA AMAZON
+# FUNÇÃO DE BUSCA E IDENTIFICAÇÃO DE BUGS
 # ==============================================================================
 
 
@@ -101,10 +107,9 @@ def extrair_preco(texto):
     return None
 
 
-def buscar_ofertas_amazon(termo):
-    print(f"\n🔍 Pesquisando por: '{termo}' na Amazon...")
+def buscar_bugs_amazon(termo):
+    print(f"\n⚡ Caçando BUGS em: '{termo}'...")
     url_busca = f"https://www.amazon.com.br/s?k={quote_plus(termo)}"
-    is_higiene = any(higiene in termo.lower() for higiene in TERMOS_HIGIENE)
 
     for tentativa in range(1, 3):
         try:
@@ -132,7 +137,7 @@ def buscar_ofertas_amazon(termo):
                     "div", {"data-component-type": "s-search-result"}
                 )
 
-                ofertas_encontradas = 0
+                bugs_encontrados = 0
                 for item in produtos:
                     tag_titulo = item.find("h2")
                     if not tag_titulo:
@@ -140,10 +145,9 @@ def buscar_ofertas_amazon(termo):
                     titulo = tag_titulo.get_text(strip=True)
                     titulo_lower = titulo.lower()
 
-                    # 1. Filtro Anti-Acessórios (aplica em eletrônicos/tecnologia)
-                    if not is_higiene:
-                        if any(ignora in titulo_lower for ignora in TERMOS_IGNORADOS_ELETRONICOS):
-                            continue
+                    # Bloqueia apenas capas e capas de celular/tablet
+                    if any(ignora in titulo_lower for ignora in TERMOS_IGNORADOS):
+                        continue
 
                     link_tag = item.find("a", class_="a-link-normal s-no-outline")
                     if not link_tag or "href" not in link_tag.attrs:
@@ -167,64 +171,45 @@ def buscar_ofertas_amazon(termo):
                         if preco_atual and preco_antigo and preco_antigo > preco_atual:
                             desconto = ((preco_antigo - preco_atual) / preco_antigo) * 100
 
-                            # 2. Lógica de Validação por Categoria
-                            oferta_valida = False
-
-                            if is_higiene:
-                                # Sabonete/Shampoo: aceita descontos de 20% a 35% e valor mínimo de R$ 15 (foco em kits)
-                                if 20.0 <= desconto <= 35.0 and preco_atual >= 15.0:
-                                    oferta_valida = True
-                                else:
-                                    if desconto > 35.0:
-                                        print(f"⚠️ Descartado (Desconto fake em higiene {desconto:.1f}%): {titulo[:30]}...")
-                            else:
-                                # Eletrônicos/Geral: aceita descontos de 45% a 75% e valor mínimo de R$ 40
-                                if 45.0 <= desconto <= 75.0 and preco_atual >= 40.0:
-                                    oferta_valida = True
-                                else:
-                                    if desconto > 75.0:
-                                        print(f"⚠️ Descartado (Preço inflado/suspeito {desconto:.1f}%): {titulo[:30]}...")
-
-                            if oferta_valida:
+                            # 🎯 SE FOR DESCONTO SUPREMO (BUG REAL DE PREÇO)
+                            if desconto >= DESCONTO_MINIMO_BUG and preco_atual >= PRECO_MINIMO_PRODUTO:
                                 mensagem = (
-                                    f"🚨 *OFERTA VERIFICADA!*\n\n"
+                                    f"🔥 *POSSÍVEL BUG / PROMOÇÃO RELÂMPAGO!*\n\n"
                                     f"📦 *Produto:* {titulo}\n"
                                     f"💰 *De:* ~R$ {preco_antigo:.2f}~\n"
-                                    f"🔥 *Por:* R$ {preco_atual:.2f} ({desconto:.0f}% OFF)\n\n"
-                                    f"🔗 [Clique aqui para comprar]({link_produto})"
+                                    f"💥 *Por:* R$ {preco_atual:.2f} ({desconto:.0f}% OFF)\n\n"
+                                    f"⚡ *CORRA ANTES QUE CORRIGIAM:* [Link do Produto]({link_produto})"
                                 )
 
-                                print(f"✅ Oferta válida ({desconto:.1f}% OFF): {titulo[:30]}...")
+                                print(f"🚨 BUG ENCONTRADO ({desconto:.1f}% OFF): {titulo[:35]}...")
                                 enviar_alerta_telegram(mensagem, link_foto=link_foto)
-                                ofertas_encontradas += 1
-                                time.sleep(5)  # Pausa para aliviar tráfego do Telegram
+                                bugs_encontrados += 1
+                                time.sleep(5)
 
-                if ofertas_encontradas == 0:
-                    print("ℹ️ Nenhuma oferta dentro dos critérios de segurança encontrada nesta busca.")
+                if bugs_encontrados == 0:
+                    print(f"ℹ️ Nenhum bug encontrado para '{termo}'.")
 
                 break
 
             elif response.status_code == 503 and tentativa == 1:
                 print("⚠️ Status 503 detectado. Aguardando 15 segundos...")
                 time.sleep(15)
-            else:
-                print(f"⚠️ Não foi possível acessar a busca (Status: {response.status_code})")
 
         except Exception as e:
-            print(f"❌ Erro durante a busca de '{termo}': {e}")
+            print(f"❌ Erro ao caçar bugs em '{termo}': {e}")
 
 
-def executar_monitoramento():
+def executar_caca_bugs():
     termos_embaralhados = TERMOS_BUSCA.copy()
     random.shuffle(termos_embaralhados)
 
     for termo in termos_embaralhados:
-        buscar_ofertas_amazon(termo)
+        buscar_bugs_amazon(termo)
         tempo_espera = random.randint(15, 30)
         time.sleep(tempo_espera)
 
 
 if __name__ == "__main__":
-    print("🤖 Bot de Ofertas Inteligente Iniciado!")
-    print("🎯 Filtros Anti-Fake por Categoria Ativos.\n")
-    executar_monitoramento()
+    print("🤖 Caçador de BUGS de Preço & Hardware Iniciado!")
+    print(f"🎯 Notificando apenas descontos acima de {DESCONTO_MINIMO_BUG}% OFF.\n")
+    executar_caca_bugs()
