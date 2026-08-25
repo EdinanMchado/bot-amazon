@@ -7,38 +7,49 @@ from bs4 import BeautifulSoup
 from curl_cffi import requests
 
 # ==============================================================================
-# CONFIGURAÇÕES DO MODO BUG DE PREÇO (INCLUINDO PC HARDWARE)
+# CONFIGURAÇÕES DO CAÇA-BUGS (HARDWARE, CASA & ELETRÔNICOS)
 # ==============================================================================
 
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
-TAG_AFILIADO = "SEU_TAG_AFILIADO_AQUI"
+TELEGRAM_TOKEN = os.getenv(
+    "TELEGRAM_TOKEN", "8417768846:AAGOJQ1uINzL1ViHgRW4N12YEnR6w2z14f8"
+)
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "8492736362")
+TAG_AFILIADO = "SEU_TAG_AFILIADO_AQUI"  # Altere para a sua tag de afiliado Amazon
 
-# ⚡ CRITÉRIOS DE BUG
-DESCONTO_MINIMO_BUG = 70.0  # Mínimo 70% OFF para apitar
-PRECO_MINIMO_PRODUTO = 40.0  # Garante que é um produto/hardware de valor real
+# ⚡ REGRAS DE BUG SUPREMO
+DESCONTO_MINIMO_BUG = (
+    65.0  # Mínimo de 65% OFF para considerar oportunidade/bug
+)
+PRECO_MINIMO_PRODUTO = (
+    25.0  # Permite pegar achados a partir de R$ 25 (ex: kit sofá/cama a R$ 46)
+)
 
-# 🛒 Termos de Busca (Geral + Hardware/Periféricos de Alta Demanda)
+# 🛒 Termos de Busca Focados em Oportunidades e Bugs de Preço
 TERMOS_BUSCA = [
+    # Hardware & Informática
+    "memoria ram ddr4",
+    "memoria ram ddr5",
+    "ssd nvme",
+    "placa de video",
+    "processador",
+    "teclado mecanico",
+    "mouse gamer",
+    "monitor gamer",
     # Eletrônicos & Consoles
     "smartphone",
     "air fryer",
     "notebook gamer",
-    "fone bluetooth",
     "playstation 5",
-    "tv 4k",
-    "monitor gamer",
-    # Hardware & Periféricos de PC
-    "memoria ram ddr5",
-    "ssd nvme",
-    "placa de video",
-    "processador intel ryzen",
-    "teclado mecanico",
-    "mouse gamer",
-    "water cooler",
+    "fone bluetooth",
+    # Casa, Cama & Decoração (onde ocorrem erros brutais de cadastro)
+    "kit sofa cama",
+    "jogo de cama casal",
+    "duvet",
+    "cabeceira",
+    "panela polishop",
 ]
 
-# 🛑 Apenas bugigangas reais e capas de celular/tablet (para não filtrar peças de PC)
+# 🛑 Apenas capas genéricas de celular/tablet para evitar falso-positivo
 TERMOS_IGNORADOS = [
     "capa para celular",
     "capinha",
@@ -52,9 +63,18 @@ TERMOS_IGNORADOS = [
 
 NAVEGADORES = ["chrome110", "chrome119", "chrome120", "edge101"]
 USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0",
+    (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,"
+        " like Gecko) Chrome/122.0.0.0 Safari/537.36"
+    ),
+    (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+        " (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+    ),
+    (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101"
+        " Firefox/123.0"
+    ),
 ]
 
 # ==============================================================================
@@ -64,7 +84,7 @@ USER_AGENTS = [
 
 def enviar_alerta_telegram(mensagem, link_foto=None):
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-        print("⚠️ Telegram não configurado em Secrets.")
+        print("⚠️ Telegram não configurado nos Secrets/Variáveis de ambiente.")
         return
 
     if link_foto:
@@ -94,7 +114,7 @@ def enviar_alerta_telegram(mensagem, link_foto=None):
 
 
 # ==============================================================================
-# FUNÇÃO DE BUSCA E IDENTIFICAÇÃO DE BUGS
+# FUNÇÃO DE SCRAPING E IDENTIFICAÇÃO DE BUGS
 # ==============================================================================
 
 
@@ -116,7 +136,9 @@ def buscar_bugs_amazon(termo):
             browser = random.choice(NAVEGADORES)
             headers = {
                 "User-Agent": random.choice(USER_AGENTS),
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+                "Accept": (
+                    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
+                ),
                 "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
                 "Accept-Encoding": "gzip, deflate, br",
                 "Referer": "https://www.amazon.com.br/",
@@ -145,15 +167,21 @@ def buscar_bugs_amazon(termo):
                     titulo = tag_titulo.get_text(strip=True)
                     titulo_lower = titulo.lower()
 
-                    # Bloqueia apenas capas e capas de celular/tablet
-                    if any(ignora in titulo_lower for ignora in TERMOS_IGNORADOS):
+                    # Bloqueia apenas bugigangas de baixo valor
+                    if any(
+                        ignora in titulo_lower for ignora in TERMOS_IGNORADOS
+                    ):
                         continue
 
-                    link_tag = item.find("a", class_="a-link-normal s-no-outline")
+                    link_tag = item.find(
+                        "a", class_="a-link-normal s-no-outline"
+                    )
                     if not link_tag or "href" not in link_tag.attrs:
                         continue
-                    link_produto = "https://www.amazon.com.br" + link_tag["href"]
-                    if TAG_AFILIADO:
+                    link_produto = (
+                        "https://www.amazon.com.br" + link_tag["href"]
+                    )
+                    if TAG_AFILIADO and TAG_AFILIADO != "SEU_TAG_AFILIADO_AQUI":
                         link_produto += f"&tag={TAG_AFILIADO}"
 
                     tag_imagem = item.find("img", class_="s-image")
@@ -163,16 +191,29 @@ def buscar_bugs_amazon(termo):
                     preco_antigo_tag = item.find("span", class_="a-text-price")
 
                     if preco_atual_tag and preco_antigo_tag:
-                        preco_atual = extrair_preco(preco_atual_tag.get_text())
+                        preco_atual = extrair_preco(
+                            preco_atual_tag.get_text()
+                        )
                         preco_antigo = extrair_preco(
-                            preco_antigo_tag.find("span", class_="a-offscreen").get_text()
+                            preco_antigo_tag.find(
+                                "span", class_="a-offscreen"
+                            ).get_text()
                         )
 
-                        if preco_atual and preco_antigo and preco_antigo > preco_atual:
-                            desconto = ((preco_antigo - preco_atual) / preco_antigo) * 100
+                        if (
+                            preco_atual
+                            and preco_antigo
+                            and preco_antigo > preco_atual
+                        ):
+                            desconto = (
+                                (preco_antigo - preco_atual) / preco_antigo
+                            ) * 100
 
-                            # 🎯 SE FOR DESCONTO SUPREMO (BUG REAL DE PREÇO)
-                            if desconto >= DESCONTO_MINIMO_BUG and preco_atual >= PRECO_MINIMO_PRODUTO:
+                            # 🎯 CRITÉRIO DE BUG REFINADO
+                            if (
+                                desconto >= DESCONTO_MINIMO_BUG
+                                and preco_atual >= PRECO_MINIMO_PRODUTO
+                            ):
                                 mensagem = (
                                     f"🔥 *POSSÍVEL BUG / PROMOÇÃO RELÂMPAGO!*\n\n"
                                     f"📦 *Produto:* {titulo}\n"
@@ -181,8 +222,13 @@ def buscar_bugs_amazon(termo):
                                     f"⚡ *CORRA ANTES QUE CORRIGIAM:* [Link do Produto]({link_produto})"
                                 )
 
-                                print(f"🚨 BUG ENCONTRADO ({desconto:.1f}% OFF): {titulo[:35]}...")
-                                enviar_alerta_telegram(mensagem, link_foto=link_foto)
+                                print(
+                                    f"🚨 BUG ENCONTRADO ({desconto:.1f}% OFF):"
+                                    f" {titulo[:35]}..."
+                                )
+                                enviar_alerta_telegram(
+                                    mensagem, link_foto=link_foto
+                                )
                                 bugs_encontrados += 1
                                 time.sleep(5)
 
@@ -210,6 +256,9 @@ def executar_caca_bugs():
 
 
 if __name__ == "__main__":
-    print("🤖 Caçador de BUGS de Preço & Hardware Iniciado!")
-    print(f"🎯 Notificando apenas descontos acima de {DESCONTO_MINIMO_BUG}% OFF.\n")
+    print("🤖 Caçador de BUGS da Amazon Iniciado!")
+    print(
+        f"🎯 Monitorando descontos a partir de {DESCONTO_MINIMO_BUG}% OFF"
+        f" (Mínimo R$ {PRECO_MINIMO_PRODUTO:.2f})\n"
+    )
     executar_caca_bugs()
