@@ -7,26 +7,44 @@ from bs4 import BeautifulSoup
 from curl_cffi import requests
 
 # ==============================================================================
-# CONFIGURAÇÕES PRINCIPAIS
+# CONFIGURAÇÕES PRINCIPAIS E REGRAS ANTI-FAKE
 # ==============================================================================
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 TAG_AFILIADO = "SEU_TAG_AFILIADO_AQUI"
-DESCONTO_MINIMO_PORCENTAGEM = 70.0
 
+# 🛒 Termos que o robô vai buscar na Amazon
 TERMOS_BUSCA = [
     "smartphone",
     "air fryer",
     "notebook",
     "fone bluetooth",
     "playstation 5",
+    "sabonete",
+    "shampoo",
 ]
 
-# Impersonations suportadas pelo curl_cffi
-NAVEGADORES = ["chrome110", "chrome119", "chrome120", "edge101"]
+# 🧴 Categorias com tratamento especial anti-fake
+TERMOS_HIGIENE = ["sabonete", "shampoo", "condicionador", "desodorante", "sabonetes"]
 
-# Headers realistas de navegador humano
+# 🛑 Palavras-chave de acessórios a serem ignorados nas buscas de eletrônicos
+TERMOS_IGNORADOS_ELETRONICOS = [
+    "capa",
+    "capinha",
+    "case",
+    "pelicula",
+    "película",
+    "suporte",
+    "cabo",
+    "carregador",
+    "adaptador",
+    "cordão",
+    "proteção",
+]
+
+# Impersonations e User-Agents para evitar Status 503
+NAVEGADORES = ["chrome110", "chrome119", "chrome120", "edge101"]
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
@@ -61,16 +79,16 @@ def enviar_alerta_telegram(mensagem, link_foto=None):
 
     try:
         response = requests.post(url, data=payload, timeout=10)
-        if response.status_code != 200:
-            print(f"❌ Erro ao enviar mensagem no Telegram: {response.text}")
-        else:
+        if response.status_code == 200:
             print("🚀 Alerta enviado com sucesso para o Telegram!")
+        else:
+            print(f"❌ Erro ao enviar mensagem no Telegram: {response.text}")
     except Exception as e:
         print(f"❌ Falha na conexão com o Telegram: {e}")
 
 
 # ==============================================================================
-# FUNÇÕES DE BUSCA E SCRAPING DA AMAZON
+# FUNÇÕES DE PROCESSAMENTO E SCRAPING DA AMAZON
 # ==============================================================================
 
 
@@ -86,6 +104,7 @@ def extrair_preco(texto):
 def buscar_ofertas_amazon(termo):
     print(f"\n🔍 Pesquisando por: '{termo}' na Amazon...")
     url_busca = f"https://www.amazon.com.br/s?k={quote_plus(termo)}"
+    is_higiene = any(higiene in termo.lower() for higiene in TERMOS_HIGIENE)
 
     for tentativa in range(1, 3):
         try:
@@ -119,15 +138,17 @@ def buscar_ofertas_amazon(termo):
                     if not tag_titulo:
                         continue
                     titulo = tag_titulo.get_text(strip=True)
+                    titulo_lower = titulo.lower()
 
-                    link_tag = item.find(
-                        "a", class_="a-link-normal s-no-outline"
-                    )
+                    # 1. Filtro Anti-Acessórios (aplica em eletrônicos/tecnologia)
+                    if not is_higiene:
+                        if any(ignora in titulo_lower for ignora in TERMOS_IGNORADOS_ELETRONICOS):
+                            continue
+
+                    link_tag = item.find("a", class_="a-link-normal s-no-outline")
                     if not link_tag or "href" not in link_tag.attrs:
                         continue
-                    link_produto = (
-                        "https://www.amazon.com.br" + link_tag["href"]
-                    )
+                    link_produto = "https://www.amazon.com.br" + link_tag["href"]
                     if TAG_AFILIADO:
                         link_produto += f"&tag={TAG_AFILIADO}"
 
@@ -138,60 +159,56 @@ def buscar_ofertas_amazon(termo):
                     preco_antigo_tag = item.find("span", class_="a-text-price")
 
                     if preco_atual_tag and preco_antigo_tag:
-                        preco_atual = extrair_preco(
-                            preco_atual_tag.get_text()
-                        )
+                        preco_atual = extrair_preco(preco_atual_tag.get_text())
                         preco_antigo = extrair_preco(
-                            preco_antigo_tag.find(
-                                "span", class_="a-offscreen"
-                            ).get_text()
+                            preco_antigo_tag.find("span", class_="a-offscreen").get_text()
                         )
 
-                        if (
-                            preco_atual
-                            and preco_antigo
-                            and preco_antigo > preco_atual
-                        ):
-                            desconto = (
-                                (preco_antigo - preco_atual) / preco_antigo
-                            ) * 100
+                        if preco_atual and preco_antigo and preco_antigo > preco_atual:
+                            desconto = ((preco_antigo - preco_atual) / preco_antigo) * 100
 
-                            if desconto >= DESCONTO_MINIMO_PORCENTAGEM:
+                            # 2. Lógica de Validação por Categoria
+                            oferta_valida = False
+
+                            if is_higiene:
+                                # Sabonete/Shampoo: aceita descontos de 20% a 35% e valor mínimo de R$ 15 (foco em kits)
+                                if 20.0 <= desconto <= 35.0 and preco_atual >= 15.0:
+                                    oferta_valida = True
+                                else:
+                                    if desconto > 35.0:
+                                        print(f"⚠️ Descartado (Desconto fake em higiene {desconto:.1f}%): {titulo[:30]}...")
+                            else:
+                                # Eletrônicos/Geral: aceita descontos de 45% a 75% e valor mínimo de R$ 40
+                                if 45.0 <= desconto <= 75.0 and preco_atual >= 40.0:
+                                    oferta_valida = True
+                                else:
+                                    if desconto > 75.0:
+                                        print(f"⚠️ Descartado (Preço inflado/suspeito {desconto:.1f}%): {titulo[:30]}...")
+
+                            if oferta_valida:
                                 mensagem = (
-                                    f"🚨 *OFERTA ENCONTRADA!*\n\n"
+                                    f"🚨 *OFERTA VERIFICADA!*\n\n"
                                     f"📦 *Produto:* {titulo}\n"
                                     f"💰 *De:* ~R$ {preco_antigo:.2f}~\n"
-                                    f"🔥 *Por:* R$ {preco_atual:.2f}"
-                                    f" ({desconto:.0f}% OFF)\n\n"
+                                    f"🔥 *Por:* R$ {preco_atual:.2f} ({desconto:.0f}% OFF)\n\n"
                                     f"🔗 [Clique aqui para comprar]({link_produto})"
                                 )
 
-                                print(
-                                    f"✅ Desconto de {desconto:.1f}% achado:"
-                                    f" {titulo[:30]}..."
-                                )
-                                enviar_alerta_telegram(
-                                    mensagem, link_foto=link_foto
-                                )
+                                print(f"✅ Oferta válida ({desconto:.1f}% OFF): {titulo[:30]}...")
+                                enviar_alerta_telegram(mensagem, link_foto=link_foto)
                                 ofertas_encontradas += 1
-                                time.sleep(4)
+                                time.sleep(5)  # Pausa para aliviar tráfego do Telegram
 
                 if ofertas_encontradas == 0:
-                    print("ℹ️ Nenhuma oferta acima de 50% OFF nesta busca.")
+                    print("ℹ️ Nenhuma oferta dentro dos critérios de segurança encontrada nesta busca.")
 
                 break
 
             elif response.status_code == 503 and tentativa == 1:
-                print(
-                    "⚠️ Status 503 detectado. Aguardando 15 segundos para tentar"
-                    " novamente..."
-                )
+                print("⚠️ Status 503 detectado. Aguardando 15 segundos...")
                 time.sleep(15)
             else:
-                print(
-                    f"⚠️ Não foi possível acessar a busca (Status:"
-                    f" {response.status_code})"
-                )
+                print(f"⚠️ Não foi possível acessar a busca (Status: {response.status_code})")
 
         except Exception as e:
             print(f"❌ Erro durante a busca de '{termo}': {e}")
@@ -208,9 +225,6 @@ def executar_monitoramento():
 
 
 if __name__ == "__main__":
-    print("🤖 Bot de Ofertas por Busca Automática Iniciado!")
-    print(
-        f"🎯 Monitorando descontos a partir de {DESCONTO_MINIMO_PORCENTAGEM}%"
-        " OFF\n"
-    )
+    print("🤖 Bot de Ofertas Inteligente Iniciado!")
+    print("🎯 Filtros Anti-Fake por Categoria Ativos.\n")
     executar_monitoramento()
