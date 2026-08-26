@@ -32,9 +32,6 @@ TERMOS_BUSCA = [
     "ssd nvme",
     "placa de video",
     "processador",
-    "teclado mecanico",
-    "mouse gamer",
-    "monitor gamer",
     # Eletrônicos & Consoles
     "smartphone",
     "air fryer",
