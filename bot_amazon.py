@@ -17,12 +17,8 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "8492736362")
 TAG_AFILIADO = "SEU_TAG_AFILIADO_AQUI"  # Altere para a sua tag de afiliado Amazon
 
 # ⚡ REGRAS DE BUG SUPREMO
-DESCONTO_MINIMO_BUG = (
-    65.0  # Mínimo de 65% OFF para considerar oportunidade/bug
-)
-PRECO_MINIMO_PRODUTO = (
-    25.0  # Permite pegar achados a partir de R$ 25 (ex: kit sofá/cama a R$ 46)
-)
+DESCONTO_MINIMO_BUG = 65.0  # Mínimo de 65% OFF para considerar oportunidade/bug
+PRECO_MINIMO_PRODUTO = 25.0  # Mínimo de R$ 25 para evitar bugigangas e capas
 
 # 🛒 Termos de Busca Focados em Oportunidades e Bugs de Preço
 TERMOS_BUSCA = [
@@ -32,6 +28,9 @@ TERMOS_BUSCA = [
     "ssd nvme",
     "placa de video",
     "processador",
+    "teclado mecanico",
+    "mouse gamer",
+    "monitor gamer",
     # Eletrônicos & Consoles
     "smartphone",
     "air fryer",
@@ -75,8 +74,24 @@ USER_AGENTS = [
 ]
 
 # ==============================================================================
-# FUNÇÃO DE ENVIO PARA O TELEGRAM
+# FUNÇÃO INTEGRAÇÃO KEEPA & TELEGRAM
 # ==============================================================================
+
+
+def extrair_asin(url_produto):
+    """Extrai o código ASIN único do produto da URL da Amazon."""
+    match = re.search(r"/(?:dp|gp/product)/([A-Z0-9]{10})", url_produto)
+    if match:
+        return match.group(1)
+    return None
+
+
+def obter_link_grafico_keepa(asin):
+    """Gera o link da imagem do gráfico histórico de preços do Keepa para o Brasil (Domain 12 = BR)."""
+    if not asin:
+        return None
+    # Domain 12 corresponde à Amazon.com.br no Keepa
+    return f"https://graph.keepa.com/pricehistory.png?domain=12&asin={asin}"
 
 
 def enviar_alerta_telegram(mensagem, link_foto=None):
@@ -164,7 +179,7 @@ def buscar_bugs_amazon(termo):
                     titulo = tag_titulo.get_text(strip=True)
                     titulo_lower = titulo.lower()
 
-                    # Bloqueia apenas bugigangas de baixo valor
+                    # Bloqueia apenas capas e películas genéricas
                     if any(
                         ignora in titulo_lower for ignora in TERMOS_IGNORADOS
                     ):
@@ -178,6 +193,15 @@ def buscar_bugs_amazon(termo):
                     link_produto = (
                         "https://www.amazon.com.br" + link_tag["href"]
                     )
+
+                    # Extrai o ASIN e gera o gráfico do Keepa
+                    asin = extrair_asin(link_produto)
+                    link_keepa_web = (
+                        f"https://keepa.com/#!product/12-{asin}"
+                        if asin
+                        else link_produto
+                    )
+
                     if TAG_AFILIADO and TAG_AFILIADO != "SEU_TAG_AFILIADO_AQUI":
                         link_produto += f"&tag={TAG_AFILIADO}"
 
@@ -216,16 +240,25 @@ def buscar_bugs_amazon(termo):
                                     f"📦 *Produto:* {titulo}\n"
                                     f"💰 *De:* ~R$ {preco_antigo:.2f}~\n"
                                     f"💥 *Por:* R$ {preco_atual:.2f} ({desconto:.0f}% OFF)\n\n"
-                                    f"⚡ *CORRA ANTES QUE CORRIGIAM:* [Link do Produto]({link_produto})"
+                                    f"📊 [Ver Histórico no Keepa]({link_keepa_web})\n"
+                                    f"⚡ *CORRA ANTES QUE CORRIGIAM:* [Comprar na Amazon]({link_produto})"
                                 )
 
                                 print(
                                     f"🚨 BUG ENCONTRADO ({desconto:.1f}% OFF):"
                                     f" {titulo[:35]}..."
                                 )
-                                enviar_alerta_telegram(
-                                    mensagem, link_foto=link_foto
+
+                                # Se tiver ASIN, envia o gráfico histórico do Keepa como imagem do alerta
+                                foto_alerta = (
+                                    obter_link_grafico_keepa(asin)
+                                    if asin
+                                    else link_foto
                                 )
+                                enviar_alerta_telegram(
+                                    mensagem, link_foto=foto_alerta
+                                )
+
                                 bugs_encontrados += 1
                                 time.sleep(5)
 
@@ -253,7 +286,7 @@ def executar_caca_bugs():
 
 
 if __name__ == "__main__":
-    print("🤖 Caçador de BUGS da Amazon Iniciado!")
+    print("🤖 Caçador de BUGS da Amazon + Keepa Iniciado!")
     print(
         f"🎯 Monitorando descontos a partir de {DESCONTO_MINIMO_BUG}% OFF"
         f" (Mínimo R$ {PRECO_MINIMO_PRODUTO:.2f})\n"
