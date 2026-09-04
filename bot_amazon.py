@@ -7,96 +7,70 @@ from bs4 import BeautifulSoup
 from curl_cffi import requests
 
 # ==============================================================================
-# CONFIGURAÇÕES DO CAÇA-BUGS (HARDWARE, CASA & ELETRÔNICOS)
+# CONFIGURAÇÕES DO CAÇA-BUGS PICHAU
 # ==============================================================================
 
 TELEGRAM_TOKEN = os.getenv(
     "TELEGRAM_TOKEN", "8417768846:AAGOJQ1uINzL1ViHgRW4N12YEnR6w2z14f8"
 )
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "8492736362")
-TAG_AFILIADO = "SEU_TAG_AFILIADO_AQUI"  # Altere para a sua tag de afiliado Amazon
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "93372553")
 
 # ⚡ REGRAS DE BUG SUPREMO
-DESCONTO_MINIMO_BUG = 65.0  # Mínimo de 65% OFF para considerar oportunidade/bug
-PRECO_MINIMO_PRODUTO = 25.0  # Mínimo de R$ 25 para evitar bugigangas e capas
+DESCONTO_MINIMO_BUG = 50.0  # Mínimo de 50% OFF para considerar bug/oportunidade
+PRECO_MINIMO_PRODUTO = 30.0  # Mínimo de R$ 30 para evitar cabos e miudezas
 
-# 🛒 Termos de Busca Focados em Oportunidades e Bugs de Preço
+# 🛒 Termos de Busca Focados em Hardware e Gamer na Pichau
 TERMOS_BUSCA = [
-    # Hardware & Informática
-    "memoria ram ddr4",
-    "memoria ram ddr5",
+    "memoria ddr4",
+    "memoria ddr5",
     "ssd nvme",
     "placa de video",
-    "processador",
+    "rtx 4060",
+    "rx 6600",
+    "processador ryzen",
+    "processador intel",
+    "fonte 600w",
+    "gabinete gamer",
+    "water cooler",
     "teclado mecanico",
-    "mouse gamer",
     "monitor gamer",
-    # Eletrônicos & Consoles
-    "smartphone",
-    "air fryer",
-    "notebook gamer",
-    "playstation 5",
-    "fone bluetooth",
-    # Casa, Cama & Decoração (onde ocorrem erros brutais de cadastro)
-    "kit sofa cama",
-    "jogo de cama casal",
-    "duvet",
-    "cabeceira",
-    "panela polishop",
+    "Cadeira",
+    "Cadeira gamer",
 ]
 
-# 🛑 Apenas capas genéricas de celular/tablet para evitar falso-positivo
+# 🛑 Termos de itens genéricos para ignorar
 TERMOS_IGNORADOS = [
-    "capa para celular",
-    "capinha",
-    "pelicula",
-    "película",
-    "capa de tablet",
-    "capa kindle",
-    "cordão",
+    "cabo",
+    "adaptador",
+    "pasta termica",
+    "parafuso",
+    "suporte",
     "adesivo",
 ]
 
 NAVEGADORES = ["chrome110", "chrome119", "chrome120", "edge101"]
-USER_AGENTS = [
-    (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,"
-        " like Gecko) Chrome/122.0.0.0 Safari/537.36"
-    ),
-    (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
-        " (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
-    ),
-    (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101"
-        " Firefox/123.0"
-    ),
-]
 
 # ==============================================================================
-# FUNÇÃO INTEGRAÇÃO KEEPA & TELEGRAM
+# FUNÇÕES AUXILIARES E TELEGRAM
 # ==============================================================================
 
 
-def extrair_asin(url_produto):
-    """Extrai o código ASIN único do produto da URL da Amazon."""
-    match = re.search(r"/(?:dp|gp/product)/([A-Z0-9]{10})", url_produto)
-    if match:
-        return match.group(1)
-    return None
-
-
-def obter_link_grafico_keepa(asin):
-    """Gera o link da imagem do gráfico histórico de preços do Keepa para o Brasil (Domain 12 = BR)."""
-    if not asin:
+def extrair_preco(texto):
+    """Limpa a string de preço e converte para float (ex: 'R$ 1.299,90' -> 1299.90)."""
+    if not texto:
         return None
-    # Domain 12 corresponde à Amazon.com.br no Keepa
-    return f"https://graph.keepa.com/pricehistory.png?domain=12&asin={asin}"
+    texto_limpo = re.sub(r"[^\d,]", "", texto)
+    if texto_limpo:
+        try:
+            return float(texto_limpo.replace(",", "."))
+        except ValueError:
+            return None
+    return None
 
 
 def enviar_alerta_telegram(mensagem, link_foto=None):
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-        print("⚠️ Telegram não configurado nos Secrets/Variáveis de ambiente.")
+        print("⚠️ Telegram não configurado corretamente.")
         return
 
     if link_foto:
@@ -118,7 +92,7 @@ def enviar_alerta_telegram(mensagem, link_foto=None):
     try:
         response = requests.post(url, data=payload, timeout=10)
         if response.status_code == 200:
-            print("🚀 ALERTA DE BUG ENVIADO PARA O TELEGRAM!")
+            print("🚀 ALERTA PICHAU ENVIADO PARA O TELEGRAM!")
         else:
             print(f"❌ Erro ao enviar mensagem no Telegram: {response.text}")
     except Exception as e:
@@ -126,153 +100,124 @@ def enviar_alerta_telegram(mensagem, link_foto=None):
 
 
 # ==============================================================================
-# FUNÇÃO DE SCRAPING E IDENTIFICAÇÃO DE BUGS
+# SCRAPING PICHAU
 # ==============================================================================
 
 
-def extrair_preco(texto):
-    if not texto:
-        return None
-    texto_limpo = re.sub(r"[^\d,]", "", texto)
-    if texto_limpo:
-        return float(texto_limpo.replace(",", "."))
-    return None
+def buscar_bugs_pichau(termo):
+    print(f"\n⚡ Caçando BUGS na Pichau em: '{termo}'...")
+    url_busca = f"https://www.pichau.com.br/search?q={quote_plus(termo)}"
 
+    try:
+        browser = random.choice(NAVEGADORES)
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                " (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+            ),
+            "Accept": (
+                "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+            ),
+            "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Referer": "https://www.pichau.com.br/",
+        }
 
-def buscar_bugs_amazon(termo):
-    print(f"\n⚡ Caçando BUGS em: '{termo}'...")
-    url_busca = f"https://www.amazon.com.br/s?k={quote_plus(termo)}"
+        # Impersonate bypassa a checagem do Cloudflare da Pichau
+        response = requests.get(
+            url_busca, impersonate=browser, headers=headers, timeout=25
+        )
 
-    for tentativa in range(1, 3):
-        try:
-            browser = random.choice(NAVEGADORES)
-            headers = {
-                "User-Agent": random.choice(USER_AGENTS),
-                "Accept": (
-                    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
-                ),
-                "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
-                "Accept-Encoding": "gzip, deflate, br",
-                "Referer": "https://www.amazon.com.br/",
-                "DNT": "1",
-                "Upgrade-Insecure-Requests": "1",
-            }
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.content, "html.parser")
 
-            response = requests.get(
-                url_busca,
-                impersonate=browser,
-                headers=headers,
-                timeout=20,
+            # Mapeia os cards da listagem da Pichau
+            produtos = soup.find_all(
+                "div", class_=re.compile(r"MuiGrid-item|product-card")
             )
+            bugs_encontrados = 0
 
-            if response.status_code == 200:
-                soup = BeautifulSoup(response.content, "html.parser")
-                produtos = soup.find_all(
-                    "div", {"data-component-type": "s-search-result"}
+            for item in produtos:
+                # Procura por links de produto válidos
+                link_tag = item.find("a", href=re.compile(r"^/"))
+                tag_titulo = item.find(["h2", "hr"], text=True) or item.find(
+                    "a"
                 )
 
-                bugs_encontrados = 0
-                for item in produtos:
-                    tag_titulo = item.find("h2")
-                    if not tag_titulo:
-                        continue
-                    titulo = tag_titulo.get_text(strip=True)
-                    titulo_lower = titulo.lower()
+                if not link_tag or not tag_titulo:
+                    continue
 
-                    # Bloqueia apenas capas e películas genéricas
-                    if any(
-                        ignora in titulo_lower for ignora in TERMOS_IGNORADOS
-                    ):
-                        continue
+                titulo = tag_titulo.get_text(strip=True)
+                titulo_lower = titulo.lower()
 
-                    link_tag = item.find(
-                        "a", class_="a-link-normal s-no-outline"
-                    )
-                    if not link_tag or "href" not in link_tag.attrs:
-                        continue
-                    link_produto = (
-                        "https://www.amazon.com.br" + link_tag["href"]
-                    )
+                # Ignora acessórios indesejados
+                if any(
+                    ignora in titulo_lower for ignora in TERMOS_IGNORADOS
+                ):
+                    continue
 
-                    # Extrai o ASIN e gera o gráfico do Keepa
-                    asin = extrair_asin(link_produto)
-                    link_keepa_web = (
-                        f"https://keepa.com/#!product/12-{asin}"
-                        if asin
-                        else link_produto
-                    )
+                link_produto = "https://www.pichau.com.br" + link_tag["href"]
 
-                    if TAG_AFILIADO and TAG_AFILIADO != "SEU_TAG_AFILIADO_AQUI":
-                        link_produto += f"&tag={TAG_AFILIADO}"
+                # Pega a imagem do produto
+                tag_imagem = item.find("img")
+                link_foto = (
+                    tag_imagem["src"]
+                    if tag_imagem and "src" in tag_imagem.attrs
+                    else None
+                )
 
-                    tag_imagem = item.find("img", class_="s-image")
-                    link_foto = tag_imagem["src"] if tag_imagem else None
+                # Busca blocos de preços (Preço original De vs Preço no PIX Por)
+                textos_preco = [
+                    span.get_text() for span in item.find_all(["span", "p", "div"]) if "R$" in span.get_text()
+                ]
 
-                    preco_atual_tag = item.find("span", class_="a-price-whole")
-                    preco_antigo_tag = item.find("span", class_="a-text-price")
+                valores = []
+                for txt in textos_preco:
+                    val = extrair_preco(txt)
+                    if val and val not in valores:
+                        valores.append(val)
 
-                    if preco_atual_tag and preco_antigo_tag:
-                        preco_atual = extrair_preco(
-                            preco_atual_tag.get_text()
-                        )
-                        preco_antigo = extrair_preco(
-                            preco_antigo_tag.find(
-                                "span", class_="a-offscreen"
-                            ).get_text()
-                        )
+                if len(valores) >= 2:
+                    preco_antigo = max(valores)
+                    preco_atual = min(valores)
+
+                    if preco_antigo > preco_atual:
+                        desconto = (
+                            (preco_antigo - preco_atual) / preco_antigo
+                        ) * 100
 
                         if (
-                            preco_atual
-                            and preco_antigo
-                            and preco_antigo > preco_atual
+                            desconto >= DESCONTO_MINIMO_BUG
+                            and preco_atual >= PRECO_MINIMO_PRODUTO
                         ):
-                            desconto = (
-                                (preco_antigo - preco_atual) / preco_antigo
-                            ) * 100
+                            mensagem = (
+                                f"🔥 *POSSÍVEL BUG / OFERTA PICHAU!*\n\n"
+                                f"📦 *Produto:* {titulo}\n"
+                                f"💰 *De:* ~R$ {preco_antigo:.2f}~\n"
+                                f"💥 *Por (À Vista/PIX):* R$ {preco_atual:.2f} ({desconto:.0f}% OFF)\n\n"
+                                f"⚡ *CORRA:* [Ver na Pichau]({link_produto})"
+                            )
 
-                            # 🎯 CRITÉRIO DE BUG REFINADO
-                            if (
-                                desconto >= DESCONTO_MINIMO_BUG
-                                and preco_atual >= PRECO_MINIMO_PRODUTO
-                            ):
-                                mensagem = (
-                                    f"🔥 *POSSÍVEL BUG / PROMOÇÃO RELÂMPAGO!*\n\n"
-                                    f"📦 *Produto:* {titulo}\n"
-                                    f"💰 *De:* ~R$ {preco_antigo:.2f}~\n"
-                                    f"💥 *Por:* R$ {preco_atual:.2f} ({desconto:.0f}% OFF)\n\n"
-                                    f"📊 [Ver Histórico no Keepa]({link_keepa_web})\n"
-                                    f"⚡ *CORRA ANTES QUE CORRIGIAM:* [Comprar na Amazon]({link_produto})"
-                                )
+                            print(
+                                f"🚨 BUG ENCONTRADO ({desconto:.1f}% OFF):"
+                                f" {titulo[:35]}..."
+                            )
+                            enviar_alerta_telegram(
+                                mensagem, link_foto=link_foto
+                            )
 
-                                print(
-                                    f"🚨 BUG ENCONTRADO ({desconto:.1f}% OFF):"
-                                    f" {titulo[:35]}..."
-                                )
+                            bugs_encontrados += 1
+                            time.sleep(5)
 
-                                # Se tiver ASIN, envia o gráfico histórico do Keepa como imagem do alerta
-                                foto_alerta = (
-                                    obter_link_grafico_keepa(asin)
-                                    if asin
-                                    else link_foto
-                                )
-                                enviar_alerta_telegram(
-                                    mensagem, link_foto=foto_alerta
-                                )
+            if bugs_encontrados == 0:
+                print(f"ℹ️ Nenhum bug encontrado na Pichau para '{termo}'.")
 
-                                bugs_encontrados += 1
-                                time.sleep(5)
+        else:
+            print(
+                f"⚠️ Status {response.status_code} ao tentar acessar a Pichau."
+            )
 
-                if bugs_encontrados == 0:
-                    print(f"ℹ️ Nenhum bug encontrado para '{termo}'.")
-
-                break
-
-            elif response.status_code == 503 and tentativa == 1:
-                print("⚠️ Status 503 detectado. Aguardando 15 segundos...")
-                time.sleep(15)
-
-        except Exception as e:
-            print(f"❌ Erro ao caçar bugs em '{termo}': {e}")
+    except Exception as e:
+        print(f"❌ Erro ao buscar na Pichau para '{termo}': {e}")
 
 
 def executar_caca_bugs():
@@ -280,13 +225,13 @@ def executar_caca_bugs():
     random.shuffle(termos_embaralhados)
 
     for termo in termos_embaralhados:
-        buscar_bugs_amazon(termo)
+        buscar_bugs_pichau(termo)
         tempo_espera = random.randint(15, 30)
         time.sleep(tempo_espera)
 
 
 if __name__ == "__main__":
-    print("🤖 Caçador de BUGS da Amazon + Keepa Iniciado!")
+    print("🤖 Caçador de BUGS da Pichau Iniciado!")
     print(
         f"🎯 Monitorando descontos a partir de {DESCONTO_MINIMO_BUG}% OFF"
         f" (Mínimo R$ {PRECO_MINIMO_PRODUTO:.2f})\n"
